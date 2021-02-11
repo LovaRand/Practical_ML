@@ -1,0 +1,197 @@
+---
+title: "Course Project Prediction"
+author: ""
+date: "2/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### 0. Charging all relevant packages
+
+```{r}
+library(corrplot)
+library(RColorBrewer)
+library(data.table)
+library(caret)
+library(rpart)
+library(kernlab)
+library(tree)
+library(randomForest)
+library(e1071) 
+```
+
+## 1. Upload raw data
+Data source :  http://groupware.les.inf.puc-rio.br/har.
+
+```{r }
+setwd('/Users/Lovaniaina/Documents/Coursera.org/Machine learning/')
+training = read.table('./Application/pml-training.csv',
+                      header = TRUE, sep = ",")
+
+testing = read.table('./Application/pml-testing.csv',
+                     header = TRUE, sep = ",")
+```
+
+## 2. Format training and test sets
+
+Here we format the "classe" variable of the training set into factor. 
+Then we create a new data frame build on relevant predictors. We decide all sub variables on arm, belt, dumbbell, forearm. To simplify, we don't use variables which contain NA or missing values.
+
+```{r }
+training$classe = as.factor(training$classe)
+
+dfTraining = data.frame(training$roll_arm,training$pitch_belt,training$yaw_belt,training$gyros_belt_x,
+                        training$accel_belt_x,training$magnet_belt_x,
+                        training$pitch_arm,training$yaw_arm,training$gyros_arm_x,
+                        training$accel_arm_x,training$magnet_arm_x,
+                        training$roll_dumbbell,training$pitch_dumbbell,training$yaw_dumbbell,
+                        training$gyros_dumbbell_x,training$accel_dumbbell_x,training$magnet_dumbbell_x,
+                        training$roll_forearm,training$pitch_forearm,training$yaw_forearm,
+                        training$gyros_forearm_x,training$accel_forearm_x,
+                        training$magnet_forearm_x,training$classe)
+
+dfTest = data.frame(testing$roll_arm,testing$pitch_belt,testing$yaw_belt,testing$gyros_belt_x,
+                    testing$accel_belt_x,testing$magnet_belt_x,
+                    testing$pitch_arm,testing$yaw_arm,testing$gyros_arm_x,
+                    testing$accel_arm_x,testing$magnet_arm_x,
+                    testing$roll_dumbbell,testing$pitch_dumbbell,testing$yaw_dumbbell,
+                    testing$gyros_dumbbell_x,testing$accel_dumbbell_x,testing$magnet_dumbbell_x,
+                    testing$roll_forearm,testing$pitch_forearm,testing$yaw_forearm,
+                    testing$gyros_forearm_x,testing$accel_forearm_x,
+                    testing$magnet_forearm_x)
+
+# Renames columns of test set in order to perform prediction 
+setnames(dfTest, old = c('testing.roll_arm','testing.pitch_belt','testing.yaw_belt','testing.gyros_belt_x',
+                    'testing.accel_belt_x','testing.magnet_belt_x',
+                    'testing.pitch_arm','testing.yaw_arm','testing.gyros_arm_x',
+                    'testing.accel_arm_x','testing.magnet_arm_x',
+                    'testing.roll_dumbbell','testing.pitch_dumbbell','testing.yaw_dumbbell',
+                    'testing.gyros_dumbbell_x','testing.accel_dumbbell_x','testing.magnet_dumbbell_x',
+                    'testing.roll_forearm','testing.pitch_forearm','testing.yaw_forearm',
+                    'testing.gyros_forearm_x','testing.accel_forearm_x',
+                    'testing.magnet_forearm_x'),
+         new = c('training.roll_arm','training.pitch_belt','training.yaw_belt','training.gyros_belt_x',
+                    'training.accel_belt_x','training.magnet_belt_x',
+                    'training.pitch_arm','training.yaw_arm','training.gyros_arm_x',
+                    'training.accel_arm_x','training.magnet_arm_x',
+                    'training.roll_dumbbell','training.pitch_dumbbell','training.yaw_dumbbell',
+                    'training.gyros_dumbbell_x','training.accel_dumbbell_x','training.magnet_dumbbell_x',
+                    'training.roll_forearm','training.pitch_forearm','training.yaw_forearm',
+                    'training.gyros_forearm_x','training.accel_forearm_x',
+                    'training.magnet_forearm_x'))
+```
+
+Here we check that all predictors and data are well formatted (no NA), and get the descriptive statistics of variables. 
+```{r }
+summary(dfTraining)
+summary(dfTest)
+```
+
+## 3. Plot 1: Correlation matrix between predictors
+Here we exclude the dependent variable "classe". 
+
+```{r }
+corrMat = cor(dfTraining[-24]) # 
+M = head(round(corrMat,2))
+M
+corrplot(corrMat, type="upper", order="hclust",tl.pos='n', main = "correlation matrix of predictors", cex.main = .5,pch = 4, pch.col = "black", pch.cex = 10)
+```
+As we can see, some variables are correlated, since we have high dimensionality of predictors, one might use PCA to deal with this risk, here we apply PCA just for comprehension and analysis purpose. 
+
+## 4. PCA analysis
+We can observe that the first two PCs are almost orthogonal i.e. around 0.
+
+```{r }
+dataPCA <- corrMat
+prComp <- prcomp(dataPCA)
+plot(prComp$x[,1],prComp$x[,2])
+
+# Explore PC1 and PC2
+prComp$rotation
+```
+
+## 4. Use train() for model's fitting 
+
+Here I just used some train data set since the computation is costly in my PC when I take all data training size. I decide to choose random forest algorithm as we want to predict categorical variable versus continuous variable. In order to see the precision, we use a second model RF with train control parameter. 
+
+```{r }
+set.seed(8)
+
+inTrain = createDataPartition(dfTraining$training.classe, p = 0.10,list = FALSE)
+Dtraining = dfTraining[inTrain,]
+
+Dtesting = dfTraining[-inTrain,] # here replaced by the pml-testing.csv
+
+# Alternative sets of PCs
+modelFitRF <- train(training.classe ~., 
+                    method = 'rf',
+                    data = Dtraining,
+                    prox = TRUE)
+
+modelFitRF_CV <- train(training.classe ~., 
+                    method = 'rf',
+                    data = Dtraining,
+                    trControl = trainControl(method = 'cv'),
+                    number = 3)
+```
+
+## 5. Explore the confusion matrix for both models. 
+Here we can see that both models has a lower classification error for the five factor variables. I assume that if we use all data training, we will get a better classification. 
+
+```{r }
+# First model used: Random forest. 
+modelFitRF$finalModel
+```
+```{r }
+# Second model used: Random forest with cross validation parameter.  
+modelFitRF_CV$finalModel
+```
+
+## 6. Get the classification tree plot for training set
+In this section, we plot the regression tree in order to better understand how we get the leafs and the final nodes.
+```{r }
+multi.class.model <- rpart(training.classe ~ ., data = Dtraining)
+rpart.plot::rpart.plot(multi.class.model)
+
+```
+
+```{r }
+getTree(modelFitRF_CV$finalModel, k = 2)
+
+```
+
+## 7.1 Prediction : visualize the prediction
+In this section, we perform prediction using test set given. As shown in the graphic below, both models predict the same classification. 
+
+```{r }
+predRF <- predict(modelFitRF, dfTest)
+predRF_CV <- predict(modelFitRF_CV, dfTest)
+
+qplot(predRF,predRF_CV, colour = dfTest$classe, data = dfTest)
+```
+
+## 7.2 Prediction : Random forest
+Here, we just list the classification each of the 20 persons that belong to the test set based on the random forest algorithm. 
+```{r }
+ClassPredTestRF <- tail(predRF, 20)
+ClassPredTestRF
+```
+
+## 7.3 Prediction : Random forest with training control CV.
+Here, we just list the classification each of the 20 persons that belong to the test set based on the random forest algorithm and by adding training control feature Cross validation. 
+```{r }
+ClassPredTestRF_CV <- tail(predRF_CV, 20)
+ClassPredTestRF_CV
+```
+
+## 8. Summary
+Here we just explore how both algorithms classify 20 persons part of the test set. 
+Nothing surprise as random forest works well and both predict the same classification as shown in the previous figure. To sum up, 7 persons will be classified in A, 8 in B, 2 in C and E and 1 in D. 
+
+```{r }
+table(ClassPredTestRF,ClassPredTestRF_CV)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
