@@ -1,6 +1,6 @@
 ---
 title: "Course Project Prediction"
-author: ""
+author: "Lova Rand"
 date: "2/11/2021"
 output: html_document
 ---
